@@ -13,7 +13,7 @@ go get github.com/mewmew/downstream
 ## Usage
 
 ```
-    downstream [OPTION]...
+downstream [OPTION]...
 
 Flags:
 
