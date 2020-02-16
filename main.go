@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/google/go-github/github"
 	"github.com/mewkiz/pkg/term"
@@ -117,6 +118,8 @@ func downstream(ownerName, repoName, token string) error {
 	// Get repository info.
 	repo, err := c.getRepo(ownerName, repoName)
 	if err != nil {
+		// This is considered an unrecoverable failure, as we need to repository
+		// information to determine the branches of the original repository.
 		return errors.WithStack(err)
 	}
 	dbg.Println("repo:", repo.Owner.GetLogin(), repo.GetName())
@@ -139,7 +142,9 @@ func downstream(ownerName, repoName, token string) error {
 		dbg.Println("fork:", repo.Owner.GetLogin(), repo.GetName())
 	}
 	for _, fork := range forks {
-		c.compare(repo, repoBranches, fork)
+		if err := c.compare(repo, repoBranches, fork); err != nil {
+			return errors.WithStack(err)
+		}
 	}
 	return nil
 }
@@ -170,7 +175,14 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 		head := forkOwnerName + ":" + forkBranchName
 		comp, _, err := c.client.Repositories.CompareCommits(c.ctx, repoOwnerName, repoRepoName, base, head)
 		if err != nil {
-			return errors.WithStack(err)
+			for waitForRateLimitReset(err) {
+				// try again after rate limit resets.
+				comp, _, err = c.client.Repositories.CompareCommits(c.ctx, repoOwnerName, repoRepoName, base, head)
+			}
+			if err != nil {
+				warn.Printf("unable to compare head=%s vs base=%s; %v", head, base, err)
+				continue // try next branch.
+			}
 		}
 		forkOwnerMadeCommit := false
 		anonymousCommit := false
@@ -184,6 +196,22 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 				anonymousCommit = true
 			}
 		}
+		// TODO: figure out how to exclude commits that -- while divergent -- have been
+		// merged with the original repository. This is the case when a commit is
+		// rebased before merge.
+		//
+		// For example:
+		//
+		//    status: "diverged" (head=baosen:master vs base=diasurgical:master)
+		//    baosen:master ahead 1 (and behind 1022) of diasurgical:master
+		//    https://github.com/baosen/devilutionX/commits/master?author=baosen
+		//
+		// Commit `219241d8064c3610a594f0b152ac66da7d38ae46` gets the new hash
+		// `c6d5dc48ffd45310e4b52c93506b1b04f713505e` after rebase.
+		//
+		// ref: https://github.com/diasurgical/devilutionX/pull/161
+		// ref: https://github.com/diasurgical/devilutionX/pull/161/commits/219241d8064c3610a594f0b152ac66da7d38ae46
+
 		// Print info if fork has commits ahead of original repository.
 		if comp.GetAheadBy() > 0 {
 			switch {
@@ -191,6 +219,7 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 				fmt.Printf("status: %q (head=%s vs base=%s)\n", comp.GetStatus(), head, base)
 				fmt.Printf("%s ahead %d (and behind %d) of %s\n", head, comp.GetAheadBy(), comp.GetBehindBy(), base)
 				fmt.Printf("https://github.com/%s/%s/commits/%s?author=%s\n", forkOwnerName, forkRepoName, forkBranchName, forkOwnerName)
+				fmt.Println()
 			case anonymousCommit:
 				// Flag if anonymous commit was made (so it's easy to filter out).
 				dbg.Printf("ANONYMOUS COMMIT status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
@@ -237,7 +266,15 @@ func newClient(token string) *Client {
 func (c *Client) getRepo(ownerName, repoName string) (*github.Repository, error) {
 	repo, _, err := c.client.Repositories.Get(c.ctx, ownerName, repoName)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		for waitForRateLimitReset(err) {
+			// try again after rate limit resets.
+			repo, _, err = c.client.Repositories.Get(c.ctx, ownerName, repoName)
+		}
+		if err != nil {
+			// unable to handle error better, if its not rate limiting, this may be
+			// due to a non-existant repository.
+			return nil, errors.WithStack(err)
+		}
 	}
 	return repo, nil
 }
@@ -293,7 +330,14 @@ func (c *Client) getForks(ownerName, repoName string) ([]*github.Repository, err
 		dbg.Println("list forks page:", page)
 		forks, resp, err := c.client.Repositories.ListForks(c.ctx, ownerName, repoName, opt)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			for waitForRateLimitReset(err) {
+				// try again after rate limit resets.
+				forks, resp, err = c.client.Repositories.ListForks(c.ctx, ownerName, repoName, opt)
+			}
+			if err != nil {
+				warn.Printf("unable to get forks of %s:%s (page %d); %v", ownerName, repoName, page, err)
+				break // return partial results
+			}
 		}
 		allForks = append(allForks, forks...)
 		if resp.NextPage == 0 {
@@ -315,16 +359,25 @@ func (c *Client) getBranches(ownerName, repoName string) ([]*github.Branch, erro
 	}
 	// get branches from all pages.
 	var allBrances []*github.Branch
+	page := 1
 	for {
 		branches, resp, err := c.client.Repositories.ListBranches(c.ctx, ownerName, repoName, opt)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			for waitForRateLimitReset(err) {
+				// try again after rate limit resets.
+				branches, resp, err = c.client.Repositories.ListBranches(c.ctx, ownerName, repoName, opt)
+			}
+			if err != nil {
+				warn.Printf("unable to get branches of %s:%s (page %d); %v", ownerName, repoName, page, err)
+				break // return partial results
+			}
 		}
 		allBrances = append(allBrances, branches...)
 		if resp.NextPage == 0 {
 			break
 		}
 		opt.Page = resp.NextPage
+		page++
 	}
 	sort.Slice(allBrances, func(i, j int) bool {
 		return allBrances[i].GetName() < allBrances[j].GetName()
@@ -375,4 +428,17 @@ type repoElem struct {
 	ownerName string
 	// Repository name.
 	repoName string
+}
+
+// waitForRateLimitReset waits until the rate limit resets. The boolean return
+// value indicates whether the given error is a GitHub rate limit error.
+func waitForRateLimitReset(err error) bool {
+	e, ok := err.(*github.RateLimitError)
+	if !ok {
+		return false
+	}
+	delta := time.Until(e.Rate.Reset.Time)
+	dbg.Printf("rate limit hit; sleeping for %v before retrying", delta)
+	time.Sleep(delta)
+	return true
 }
