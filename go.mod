@@ -1,6 +1,6 @@
 module github.com/mewmew/guldkorn
 
-go 1.14
+go 1.13
 
 require (
 	github.com/google/go-github/v29 v29.0.3
