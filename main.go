@@ -33,7 +33,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v29/github"
 	"github.com/mewkiz/pkg/term"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
@@ -355,8 +355,10 @@ func (c *Client) getForks(ownerName, repoName string) ([]*github.Repository, err
 
 // getBranches returns the branches of the given owner/repo.
 func (c *Client) getBranches(ownerName, repoName string) ([]*github.Branch, error) {
-	opt := &github.ListOptions{
-		PerPage: 100,
+	opt := &github.BranchListOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
 	}
 	// get branches from all pages.
 	var allBrances []*github.Branch
