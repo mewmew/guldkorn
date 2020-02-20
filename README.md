@@ -1,19 +1,19 @@
-# Downstream
+# Guldkorn
 
 *Poesi för döda fiskar.*
 
-The `downstream` tools locates forks with divergent commits (branches with commits ahead of the original repository).
+The `guldkorn` tools locates forks with divergent commits or commits ahead of the original repository.
 
 ## Installation
 
 ```
-go get github.com/mewmew/downstream
+go get github.com/mewmew/guldkorn
 ```
 
 ## Usage
 
 ```
-downstream [OPTION]...
+guldkorn [OPTION]...
 
 Flags:
 
@@ -31,7 +31,7 @@ Flags:
 This example helped narrow down `250` forks across `2554` branches to `65` forks across `149` branches with divergent commits, a subset of which are presented below.
 
 ```bash
-$ downstream -owner diasurgical -repo devilutionX -token ACCESS_TOKEN
+$ guldkorn -owner diasurgical -repo devilutionX -token ACCESS_TOKEN
 
 status: "diverged" (head=AJenbo:roguelike vs base=diasurgical:master)
 AJenbo:roguelike ahead 3 (and behind 139) of diasurgical:master

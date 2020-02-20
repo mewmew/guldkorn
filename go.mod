@@ -1,4 +1,4 @@
-module github.com/mewmew/downstream
+module github.com/mewmew/guldkorn
 
 go 1.14
 

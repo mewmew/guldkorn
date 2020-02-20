@@ -1,9 +1,9 @@
-// The downstream tools locates forks with divergent commits (branches with
-// commits ahead of the original repository).
+// The guldkorn tools locates forks with divergent commits or commits ahead of
+// the original repository.
 //
 // Usage:
 //
-//    downstream [OPTION]...
+//    guldkorn [OPTION]...
 //
 // Flags:
 //
@@ -17,7 +17,7 @@
 //
 // Example:
 //
-//    downstream -owner USER -repo REPO -token ACCESS_TOKEN
+//    guldkorn -owner USER -repo REPO -token ACCESS_TOKEN
 //
 // To create a personal access token on GitHub visit https://github.com/settings/tokens
 package main
@@ -40,18 +40,18 @@ import (
 )
 
 var (
-	// dbg is a logger with the "downstream:" prefix which logs debug messages to
+	// dbg is a logger with the "guldkorn:" prefix which logs debug messages to
 	// standard error.
-	dbg = log.New(os.Stderr, term.CyanBold("downstream:")+" ", 0)
-	// warn is a logger with the "downstream:" prefix which logs warning messages
+	dbg = log.New(os.Stderr, term.CyanBold("guldkorn:")+" ", 0)
+	// warn is a logger with the "guldkorn:" prefix which logs warning messages
 	// to standard error.
-	warn = log.New(os.Stderr, term.RedBold("downstream:")+" ", 0)
+	warn = log.New(os.Stderr, term.RedBold("guldkorn:")+" ", 0)
 )
 
 const use = `
 Usage:
 
-	downstream [OPTION]...
+	guldkorn [OPTION]...
 
 Flags:
 `
@@ -59,7 +59,7 @@ Flags:
 const example = `
 Example:
 
-	downstream -owner USER -repo REPO -token ACCESS_TOKEN
+	guldkorn -owner USER -repo REPO -token ACCESS_TOKEN
 
 To create a personal access token on GitHub visit https://github.com/settings/tokens
 `
@@ -107,13 +107,14 @@ func main() {
 		dbg.SetOutput(ioutil.Discard)
 	}
 	// Locate forks with divergent commits.
-	if err := downstream(ownerName, repoName, token); err != nil {
+	if err := findInterestingForks(ownerName, repoName, token); err != nil {
 		log.Fatalf("%+v", err)
 	}
 }
 
-// downstream locates forks with divergent commits.
-func downstream(ownerName, repoName, token string) error {
+// findInterestingForks locates forks with divergent commits or commits ahead of
+// origin.
+func findInterestingForks(ownerName, repoName, token string) error {
 	c := newClient(token)
 	// Get repository info.
 	repo, err := c.getRepo(ownerName, repoName)
@@ -232,7 +233,7 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 				dbg.Printf("NO COMMIT BY FORK OWNER https://github.com/%s/%s/commits/%s", forkOwnerName, forkRepoName, forkBranchName)
 			}
 		} else {
-			dbg.Printf("NOT AHEAD status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
+			//dbg.Printf("NOT AHEAD status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
 		}
 	}
 	return nil
@@ -383,6 +384,40 @@ func (c *Client) getBranches(ownerName, repoName string) ([]*github.Branch, erro
 		return allBrances[i].GetName() < allBrances[j].GetName()
 	})
 	return allBrances, nil
+}
+
+// getCommits returns the commits of the given owner/repo in the specified
+// branch.
+func (c *Client) getCommits(ownerName, repoName, branchName string) ([]*github.RepositoryCommit, error) {
+	// TODO: use Since and Until? https://pkg.go.dev/github.com/google/go-github/github?tab=doc#CommitsListOptions
+	opt := &github.CommitsListOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+	// get commits from all pages.
+	var allCommits []*github.RepositoryCommit
+	page := 1
+	for {
+		commits, resp, err := c.client.Repositories.ListCommits(c.ctx, ownerName, repoName, opt)
+		if err != nil {
+			for waitForRateLimitReset(err) {
+				// try again after rate limit resets.
+				commits, resp, err = c.client.Repositories.ListCommits(c.ctx, ownerName, repoName, opt)
+			}
+			if err != nil {
+				warn.Printf("unable to get commits of %s:%s in branch %q (page %d); %v", ownerName, repoName, branchName, page, err)
+				break // return partial results
+			}
+		}
+		allCommits = append(allCommits, commits...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+		page++
+	}
+	return allCommits, nil
 }
 
 // ### [ Helper functions ] ####################################################
