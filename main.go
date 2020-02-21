@@ -20,6 +20,9 @@
 //    guldkorn -owner USER -repo REPO -token ACCESS_TOKEN
 //
 // To create a personal access token on GitHub visit https://github.com/settings/tokens
+//
+// If the environment variable GULDKORN_GITHUB_TOKEN is set, the access token
+// will be read from there.
 package main
 
 import (
@@ -48,6 +51,8 @@ var (
 	warn = log.New(os.Stderr, term.RedBold("guldkorn:")+" ", 0)
 )
 
+const guldkornTokenEnvName = "GULDKORN_GITHUB_TOKEN"
+
 const use = `
 Usage:
 
@@ -62,6 +67,8 @@ Example:
 	guldkorn -owner USER -repo REPO -token ACCESS_TOKEN
 
 To create a personal access token on GitHub visit https://github.com/settings/tokens
+
+If the environment variable ` + guldkornTokenEnvName + ` is set, the access token will be read from there.
 `
 
 func usage() {
@@ -99,8 +106,12 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	if envToken, ok := os.LookupEnv(guldkornTokenEnvName); ok {
+		dbg.Printf("using OAuth token from %s environment variable", guldkornTokenEnvName)
+		token = envToken
+	}
 	if len(token) == 0 {
-		warn.Println("OAuth token not specified; see -token flag")
+		warn.Printf("OAuth token not specified; use -token flag or set %s environment variable", guldkornTokenEnvName)
 	}
 	// Mute debug messages if `-q` is set.
 	if quiet {
