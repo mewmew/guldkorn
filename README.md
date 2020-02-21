@@ -28,7 +28,7 @@ Flags:
 
 ## Examples
 
-This example helped narrow down `250` forks across `2554` branches to `65` forks across `149` branches with divergent commits, a subset of which are presented below.
+This example helped narrow down `250` forks across `2554` branches to `65` forks across `149` branches with divergent commits or commits ahead of origin, a subset of which are presented below.
 
 ```bash
 $ guldkorn -owner diasurgical -repo devilutionX -token ACCESS_TOKEN
