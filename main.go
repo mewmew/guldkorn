@@ -231,17 +231,20 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 				fmt.Printf("status: %q (head=%s vs base=%s)\n", comp.GetStatus(), head, base)
 				fmt.Printf("%s ahead %d (and behind %d) of %s\n", head, comp.GetAheadBy(), comp.GetBehindBy(), base)
 				fmt.Printf("https://github.com/%s/%s/commits/%s?author=%s\n", forkOwnerName, forkRepoName, forkBranchName, forkOwnerName)
+				fmt.Printf("https://github.com/%s/%s/compare/master...%s:%s\n", repoOwnerName, repoRepoName, forkOwnerName, forkBranchName)
 				fmt.Println()
 			case anonymousCommit:
 				// Flag if anonymous commit was made (so it's easy to filter out).
 				dbg.Printf("ANONYMOUS COMMIT status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
 				dbg.Printf("ANONYMOUS COMMIT %s ahead %d (and behind %d) of %s", head, comp.GetAheadBy(), comp.GetBehindBy(), base)
 				dbg.Printf("ANONYMOUS COMMIT https://github.com/%s/%s/commits/%s", forkOwnerName, forkRepoName, forkBranchName)
+				dbg.Printf("ANONYMOUS COMMIT https://github.com/%s/%s/compare/master...%s:%s\n", repoOwnerName, repoRepoName, forkOwnerName, forkBranchName)
 			default:
 				// Flag if no commit was made by forkOwnerName (so it's easy to filter out).
 				dbg.Printf("NO COMMIT BY FORK OWNER status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
 				dbg.Printf("NO COMMIT BY FORK OWNER %s ahead %d (and behind %d) of %s", head, comp.GetAheadBy(), comp.GetBehindBy(), base)
 				dbg.Printf("NO COMMIT BY FORK OWNER https://github.com/%s/%s/commits/%s", forkOwnerName, forkRepoName, forkBranchName)
+				dbg.Printf("NO COMMIT BY FORK OWNER https://github.com/%s/%s/compare/master...%s:%s\n", repoOwnerName, repoRepoName, forkOwnerName, forkBranchName)
 			}
 		} else {
 			//dbg.Printf("NOT AHEAD status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
