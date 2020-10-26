@@ -36,7 +36,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/google/go-github/v29/github"
+	"github.com/google/go-github/v32/github"
 	"github.com/mewkiz/pkg/term"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
@@ -64,7 +64,7 @@ Flags:
 const example = `
 Example:
 
-	guldkorn -owner USER -repo REPO -token ACCESS_TOKEN
+	guldkorn -owner USER -repo REPO -token ACCESS_TOKEN [-watch]
 
 To create a personal access token on GitHub visit https://github.com/settings/tokens
 
@@ -88,11 +88,14 @@ func main() {
 		repoName string
 		// GitHub OAuth personal access token.
 		token string
+		// Watch divergent forks.
+		watch bool
 	)
 	flag.StringVar(&ownerName, "owner", "", "owner name (GitHub user or organization)")
 	flag.BoolVar(&quiet, "q", false, "suppress non-error messages")
 	flag.StringVar(&repoName, "repo", "", "repository name")
 	flag.StringVar(&token, "token", "", "GitHub OAuth personal access token")
+	flag.BoolVar(&watch, "watch", false, "watch divergent forks")
 	flag.Usage = usage
 	flag.Parse()
 	// Sanity check of command line flags.
@@ -118,14 +121,14 @@ func main() {
 		dbg.SetOutput(ioutil.Discard)
 	}
 	// Locate forks with divergent commits.
-	if err := findInterestingForks(ownerName, repoName, token); err != nil {
+	if err := findInterestingForks(ownerName, repoName, token, watch); err != nil {
 		log.Fatalf("%+v", err)
 	}
 }
 
 // findInterestingForks locates forks with divergent commits or commits ahead of
 // origin.
-func findInterestingForks(ownerName, repoName, token string) error {
+func findInterestingForks(ownerName, repoName, token string, watch bool) error {
 	c := newClient(token)
 	// Get repository info.
 	repo, err := c.getRepo(ownerName, repoName)
@@ -154,16 +157,31 @@ func findInterestingForks(ownerName, repoName, token string) error {
 		dbg.Println("fork:", repo.Owner.GetLogin(), repo.GetName())
 	}
 	for _, fork := range forks {
-		if err := c.compare(repo, repoBranches, fork); err != nil {
+		divergent, err := c.compare(repo, repoBranches, fork)
+		if err != nil {
 			return errors.WithStack(err)
+		}
+		if watch && divergent {
+			forkOwnerName := fork.Owner.GetLogin()
+			forkRepoName := fork.GetName()
+			dbg.Printf("watching https://github.com/%s/%s", forkOwnerName, forkRepoName)
+			subscription := &github.Subscription{
+				Subscribed: new(bool),
+			}
+			*subscription.Subscribed = true
+			if _, _, err := c.client.Activity.SetRepositorySubscription(c.ctx, forkOwnerName, forkRepoName, subscription); err != nil {
+				return errors.WithStack(err)
+			}
 		}
 	}
 	return nil
 }
 
 // compare compares the repository against the fork to find any branches of the
-// fork that are ahead of the original repository.
-func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch, fork *github.Repository) error {
+// fork that are ahead of the original repository. The boolean return reports
+// whether the fork had any divergent commits as compared with the original
+// repository.
+func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch, fork *github.Repository) (bool, error) {
 	defaultBranch := repo.GetDefaultBranch()
 	repoBranchNames := make(map[string]bool)
 	for _, repoBranch := range repoBranches {
@@ -175,8 +193,9 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 	forkRepoName := fork.GetName()
 	forkBranches, err := c.getBranches(forkOwnerName, forkRepoName)
 	if err != nil {
-		return errors.WithStack(err)
+		return false, errors.WithStack(err)
 	}
+	divergent := false
 	for _, forkBranch := range forkBranches {
 		compareRepoBranchName := defaultBranch
 		forkBranchName := forkBranch.GetName()
@@ -233,6 +252,7 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 				fmt.Printf("https://github.com/%s/%s/commits/%s?author=%s\n", forkOwnerName, forkRepoName, forkBranchName, forkOwnerName)
 				fmt.Printf("https://github.com/%s/%s/compare/%s...%s:%s\n", repoOwnerName, repoRepoName, compareRepoBranchName, forkOwnerName, forkBranchName)
 				fmt.Println()
+				divergent = true
 			case anonymousCommit:
 				// Flag if anonymous commit was made (so it's easy to filter out).
 				dbg.Printf("ANONYMOUS COMMIT status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
@@ -250,7 +270,7 @@ func (c *Client) compare(repo *github.Repository, repoBranches []*github.Branch,
 			//dbg.Printf("NOT AHEAD status: %q (head=%s vs base=%s)", comp.GetStatus(), head, base)
 		}
 	}
-	return nil
+	return divergent, nil
 }
 
 // Client is an OAuth authenticated GitHub client.
