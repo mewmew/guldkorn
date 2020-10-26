@@ -56,4 +56,6 @@ https://github.com/qndel/devilutionX/commits/pixellight?author=qndel
 
 **Note:** Remember to set `ACCESS_TOKEN` to not hit the rate limit on GitHub. To create a personal access token on GitHub visit https://github.com/settings/tokens
 
+To use the `-watch` flag, the **notifications** permission scope is required when generating the GitHub access token. Other than that, Guldkorn requires no additional scopes.
+
 If the environment variable `GULDKORN_GITHUB_TOKEN` is set, the access token will be read from there.
