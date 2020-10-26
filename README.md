@@ -24,6 +24,8 @@ Flags:
         repository name
   -token string
         GitHub OAuth personal access token
+  -watch
+        watch divergent forks
 ```
 
 ## Examples
